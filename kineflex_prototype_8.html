@@ -1,0 +1,1677 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KinéFlex — Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;1,9..144,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<style>
+  :root{
+    --abyss: #061626;
+    --deep: #0b2540;
+    --mid: #12456e;
+    --surface: #1a6fa8;
+    --foam: #e9f3f7;
+    --amber: #f4a261;
+    --amber-soft: #f7c089;
+    --coral: #e76f51;
+    --kelp: #2a9d8f;
+    --ink: #04101c;
+    --ghost: rgba(233,243,247,0.08);
+    --ghost-strong: rgba(233,243,247,0.18);
+    --serif: 'Fraunces', Georgia, serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
+  body{
+    font-family:var(--serif);
+    color:var(--foam);
+    background:
+      radial-gradient(ellipse at 20% 10%, #1a6fa8 0%, transparent 55%),
+      radial-gradient(ellipse at 80% 100%, #2a9d8f33 0%, transparent 50%),
+      linear-gradient(180deg, #061626 0%, #04101c 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    position:relative;
+  }
+
+  /* Grain */
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:1000;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+    opacity:.06;mix-blend-mode:overlay;
+  }
+
+  /* Bulles décoratives */
+  .bubbles{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+  .bubble{
+    position:absolute;bottom:-40px;border-radius:50%;
+    background: radial-gradient(circle at 30% 30%, rgba(233,243,247,.35), rgba(233,243,247,.05));
+    animation: rise linear infinite;
+  }
+  @keyframes rise{
+    from{transform:translateY(0) translateX(0);opacity:0}
+    10%{opacity:.8}
+    to{transform:translateY(-110vh) translateX(var(--drift,0));opacity:0}
+  }
+
+  /* Scènes */
+  .scene{
+    position:fixed;inset:0;display:none;
+    padding: 48px 56px;
+    z-index:2;
+    opacity:0;transition:opacity .6s ease;
+  }
+  .scene.active{display:flex;opacity:1}
+
+  /* En-tête commun */
+  .topbar{
+    position:fixed;top:24px;left:56px;right:56px;
+    display:flex;justify-content:space-between;align-items:center;
+    font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color: rgba(233,243,247,.55);z-index:10;
+  }
+  .topbar .brand{display:flex;align-items:center;gap:10px}
+  .topbar .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 12px var(--amber)}
+  .step-indicator{display:flex;gap:6px}
+  .step-indicator span{
+    width:28px;height:2px;background:var(--ghost);transition:background .4s;
+  }
+  .step-indicator span.done{background:var(--amber)}
+  .step-indicator span.current{background:var(--foam)}
+
+  /* ---------- SCÈNE 1 : INTRO ---------- */
+  #scene-intro{flex-direction:column;justify-content:center;align-items:flex-start;max-width:100vw}
+  .intro-grid{
+    display:grid;grid-template-columns:1.1fr .9fr;gap:80px;width:100%;max-width:1240px;margin:0 auto;
+  }
+  .eyebrow{
+    font-family:var(--mono);font-size:11px;letter-spacing:.3em;text-transform:uppercase;
+    color:var(--amber);margin-bottom:24px;display:inline-flex;align-items:center;gap:12px;
+  }
+  .eyebrow::before{content:"";width:32px;height:1px;background:var(--amber)}
+  h1.title{
+    font-family:var(--serif);font-weight:300;font-size: clamp(48px, 6.5vw, 92px);
+    line-height:.95;letter-spacing:-.02em;margin-bottom:32px;
+  }
+  h1.title em{font-style:italic;color:var(--amber-soft);font-weight:400}
+  .lede{
+    font-family:var(--serif);font-weight:300;font-size:20px;line-height:1.55;
+    color:rgba(233,243,247,.82);max-width:560px;margin-bottom:24px;
+  }
+  .disclaimer{
+    font-family:var(--mono);font-size:12px;line-height:1.7;color:rgba(233,243,247,.5);
+    border-left:2px solid var(--amber);padding-left:20px;max-width:540px;margin-bottom:40px;
+  }
+  .meta-card{
+    background:var(--ghost);backdrop-filter:blur(12px);
+    border:1px solid var(--ghost-strong);border-radius:2px;
+    padding:32px;font-family:var(--mono);font-size:12px;line-height:2;
+    color:rgba(233,243,247,.7);
+  }
+  .meta-card .row{display:flex;justify-content:space-between;gap:40px;padding:8px 0;border-bottom:1px dashed var(--ghost-strong)}
+  .meta-card .row:last-child{border-bottom:none}
+  .meta-card .label{color:rgba(233,243,247,.45);text-transform:uppercase;letter-spacing:.15em;font-size:10px}
+  .meta-card .value{color:var(--foam);text-align:right}
+  .meta-card h3{
+    font-family:var(--serif);font-weight:500;font-style:italic;font-size:18px;
+    color:var(--amber-soft);margin-bottom:20px;letter-spacing:0;
+  }
+
+  /* Bouton principal */
+  .cta{
+    appearance:none;border:none;cursor:pointer;
+    font-family:var(--mono);font-size:12px;letter-spacing:.25em;text-transform:uppercase;
+    background:var(--amber);color:var(--ink);padding:18px 36px;
+    border-radius:999px;font-weight:500;
+    transition:all .35s cubic-bezier(.2,.8,.2,1);
+    display:inline-flex;align-items:center;gap:14px;
+    box-shadow: 0 8px 30px rgba(244,162,97,.25);
+  }
+  .cta:hover{transform:translateY(-2px);box-shadow:0 14px 40px rgba(244,162,97,.45);background:var(--amber-soft)}
+  .cta .arrow{transition:transform .35s}
+  .cta:hover .arrow{transform:translateX(4px)}
+
+  /* ---------- SCÈNE 2 : JUMEAU NUMÉRIQUE ---------- */
+  #scene-twin{flex-direction:row;gap:60px;align-items:center;justify-content:center;padding:80px 56px 56px}
+  .twin-visual{
+    position:relative;width:min(560px, 45vw);aspect-ratio: 4/3;
+    border-radius:4px;overflow:hidden;
+    background: radial-gradient(circle at center, #0d2a44 0%, #061626 100%);
+    border:1px solid var(--ghost-strong);
+    box-shadow: 0 30px 80px rgba(0,0,0,.5), inset 0 0 60px rgba(42,157,143,.08);
+  }
+  #video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);opacity:.25;filter:saturate(.3) brightness(.7)}
+  #canvas{position:absolute;inset:0;width:100%;height:100%}
+  .twin-label{
+    position:absolute;top:16px;left:16px;
+    font-family:var(--mono);font-size:10px;letter-spacing:.25em;text-transform:uppercase;
+    color:var(--amber);display:flex;align-items:center;gap:8px;
+    background:rgba(6,22,38,.6);backdrop-filter:blur(8px);
+    padding:8px 12px;border-radius:2px;border:1px solid var(--ghost-strong);
+  }
+  .twin-label .pulse{
+    width:6px;height:6px;border-radius:50%;background:var(--amber);
+    animation:pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:.3;transform:scale(.9)}50%{opacity:1;transform:scale(1.1)}}
+  .twin-status{
+    position:absolute;bottom:16px;left:16px;right:16px;
+    font-family:var(--mono);font-size:11px;color:rgba(233,243,247,.6);
+    display:flex;justify-content:space-between;
+  }
+  .twin-status .ok{color:var(--kelp)}
+  .twin-status .no{color:var(--coral)}
+
+  .twin-text{max-width:460px}
+  .twin-text h2{
+    font-family:var(--serif);font-weight:300;font-size:52px;line-height:1;
+    letter-spacing:-.02em;margin-bottom:28px;
+  }
+  .twin-text h2 em{font-style:italic;color:var(--amber-soft)}
+  .twin-text p{
+    font-family:var(--serif);font-weight:300;font-size:17px;line-height:1.6;
+    color:rgba(233,243,247,.82);margin-bottom:18px;
+  }
+  .twin-text p .mono{font-family:var(--mono);font-size:13px;color:var(--amber)}
+  .twin-list{list-style:none;margin:28px 0;padding:0}
+  .twin-list li{
+    font-family:var(--mono);font-size:12px;line-height:1.8;color:rgba(233,243,247,.65);
+    padding-left:24px;position:relative;
+  }
+  .twin-list li::before{
+    content:"◆";position:absolute;left:0;color:var(--amber);font-size:8px;top:6px;
+  }
+
+  /* ---------- SCÈNE 3 : PRÉNOM ---------- */
+  #scene-name{flex-direction:column;justify-content:center;align-items:center;gap:0}
+  .name-card{
+    max-width:640px;width:100%;text-align:center;
+    animation: fadeUp .9s cubic-bezier(.2,.8,.2,1);
+  }
+  @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+  .name-card h2{
+    font-family:var(--serif);font-weight:300;font-size:clamp(40px,5vw,72px);
+    line-height:1.05;letter-spacing:-.02em;margin-bottom:24px;
+  }
+  .name-card h2 em{font-style:italic;color:var(--amber-soft)}
+  .name-card p{
+    font-family:var(--serif);font-weight:300;font-size:18px;line-height:1.55;
+    color:rgba(233,243,247,.75);margin-bottom:48px;max-width:480px;margin-left:auto;margin-right:auto;
+  }
+  .name-input-wrap{
+    position:relative;width:100%;max-width:420px;margin:0 auto 32px;
+  }
+  #nameInput{
+    width:100%;background:transparent;border:none;outline:none;
+    border-bottom:1px solid var(--ghost-strong);
+    font-family:var(--serif);font-weight:300;font-size:40px;
+    color:var(--foam);text-align:center;padding:16px 0;
+    transition:border-color .3s;
+  }
+  #nameInput:focus{border-bottom-color:var(--amber)}
+  #nameInput::placeholder{color:rgba(233,243,247,.25);font-style:italic}
+  .name-hint{
+    font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;
+    color:rgba(233,243,247,.4);margin-top:12px;
+  }
+  .name-choice{
+    display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:40px;
+  }
+  .finger-chip{
+    font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;
+    background:transparent;border:1px solid var(--ghost-strong);color:rgba(233,243,247,.7);
+    padding:12px 18px;border-radius:999px;cursor:pointer;
+    transition:all .25s;
+  }
+  .finger-chip:hover{border-color:var(--amber);color:var(--foam)}
+  .finger-chip.selected{background:var(--amber);color:var(--ink);border-color:var(--amber)}
+  .name-choice-label{
+    font-family:var(--mono);font-size:10px;letter-spacing:.25em;text-transform:uppercase;
+    color:rgba(233,243,247,.45);margin-bottom:14px;text-align:center;
+  }
+
+  /* ---------- SCÈNE 4 : JEU ---------- */
+  #scene-game{padding:0;background:
+    radial-gradient(ellipse at 50% 120%, #2a9d8f44 0%, transparent 60%),
+    linear-gradient(180deg, #0b2540 0%, #04101c 60%, #020a14 100%);
+  }
+  #scene-game.active{display:block}
+  .game-hud{
+    position:absolute;top:24px;left:32px;right:32px;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    z-index:5;pointer-events:none;
+  }
+  .hud-block{
+    background:rgba(6,22,38,.55);backdrop-filter:blur(10px);
+    border:1px solid var(--ghost-strong);border-radius:2px;
+    padding:14px 20px;font-family:var(--mono);font-size:11px;letter-spacing:.15em;
+    color:rgba(233,243,247,.8);
+  }
+  .hud-block .num{font-size:24px;color:var(--foam);letter-spacing:0;display:block;margin-top:4px;font-family:var(--serif);font-weight:500}
+  .hud-block.score .num{color:var(--amber)}
+
+  .game-canvas-wrap{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  }
+  #gameCanvas{width:100%;height:100%;display:block}
+
+  .mini-twin{
+    position:absolute;bottom:24px;left:32px;
+    width:180px;height:135px;border-radius:2px;overflow:hidden;
+    background:rgba(6,22,38,.8);backdrop-filter:blur(10px);
+    border:1px solid var(--ghost-strong);z-index:5;
+  }
+  #miniVideo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);opacity:.2}
+  #miniCanvas{position:absolute;inset:0;width:100%;height:100%}
+  .mini-label{
+    position:absolute;top:6px;left:8px;font-family:var(--mono);font-size:9px;
+    letter-spacing:.2em;color:var(--amber);text-transform:uppercase;
+  }
+
+  .flexion-gauge{
+    position:absolute;bottom:24px;right:32px;
+    width:180px;z-index:5;
+    background:rgba(6,22,38,.55);backdrop-filter:blur(10px);
+    border:1px solid var(--ghost-strong);padding:14px 16px;
+  }
+  .flexion-gauge .g-label{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:rgba(233,243,247,.55);text-transform:uppercase;margin-bottom:8px}
+  .flexion-gauge .g-bar{height:4px;background:var(--ghost);border-radius:2px;overflow:hidden;margin-bottom:8px}
+  .flexion-gauge .g-fill{height:100%;background:linear-gradient(90deg, var(--kelp), var(--amber));width:0%;transition:width .15s;border-radius:2px}
+  .flexion-gauge .g-value{font-family:var(--serif);font-weight:500;font-size:22px;color:var(--foam)}
+  .flexion-gauge .g-value .unit{font-size:11px;color:rgba(233,243,247,.5);margin-left:4px;font-family:var(--mono)}
+
+  /* Panneau sensibilité */
+  .sens-panel{
+    position:absolute;bottom:140px;right:32px;
+    width:180px;z-index:5;
+    background:rgba(6,22,38,.55);backdrop-filter:blur(10px);
+    border:1px solid var(--ghost-strong);padding:14px 16px;
+  }
+  .sens-panel .s-label{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:rgba(233,243,247,.55);text-transform:uppercase;margin-bottom:10px}
+  .sens-panel input[type=range]{
+    width:100%;accent-color:var(--amber);margin-bottom:6px;cursor:pointer;
+  }
+  .sens-panel .s-value{font-family:var(--serif);font-weight:500;font-size:20px;color:var(--amber)}
+  .sens-panel .s-unit{font-size:11px;color:rgba(233,243,247,.5);margin-left:3px;font-family:var(--mono)}
+  .sens-panel .s-hint{font-family:var(--mono);font-size:9px;letter-spacing:.05em;color:rgba(233,243,247,.4);margin-top:6px;line-height:1.4}
+
+  /* Encouragements */
+  .encourage{
+    position:absolute;left:50%;top:22%;transform:translateX(-50%);
+    font-family:var(--serif);font-weight:300;font-style:italic;
+    font-size:clamp(28px, 4vw, 44px);color:var(--amber-soft);
+    z-index:6;pointer-events:none;
+    text-shadow: 0 4px 20px rgba(244,162,97,.4);
+    opacity:0;
+  }
+  .encourage.show{animation: encourageIn 2.6s ease forwards}
+  @keyframes encourageIn{
+    0%{opacity:0;transform:translateX(-50%) translateY(20px) scale(.92)}
+    15%{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
+    85%{opacity:1;transform:translateX(-50%) translateY(-10px) scale(1)}
+    100%{opacity:0;transform:translateX(-50%) translateY(-30px) scale(1.02)}
+  }
+
+  /* Écran final */
+  .endscreen{
+    position:absolute;inset:0;background:rgba(4,16,28,.92);backdrop-filter:blur(14px);
+    display:none;flex-direction:column;align-items:center;justify-content:center;z-index:20;
+    padding:56px;
+  }
+  .endscreen.show{display:flex;animation:fadeUp .8s}
+  .endscreen .eyebrow{color:var(--kelp)}
+  .endscreen h2{font-family:var(--serif);font-weight:300;font-size:clamp(40px,5vw,64px);margin-bottom:32px;text-align:center}
+  .endscreen h2 em{font-style:italic;color:var(--amber-soft)}
+  .stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:40px;margin-bottom:48px;max-width:720px}
+  .stat-item{text-align:center}
+  .stat-item .num{font-family:var(--serif);font-weight:300;font-size:56px;color:var(--amber)}
+  .stat-item .lab{font-family:var(--mono);font-size:10px;letter-spacing:.25em;text-transform:uppercase;color:rgba(233,243,247,.55);margin-top:4px}
+
+  /* Utilitaires */
+  .hidden{display:none !important}
+  @media (max-width: 900px){
+    .intro-grid{grid-template-columns:1fr;gap:40px}
+    #scene-twin{flex-direction:column;padding:96px 24px 24px}
+    .scene{padding:32px 24px}
+    .topbar{left:24px;right:24px}
+  }
+</style>
+</head>
+<body>
+
+<div class="bubbles" id="bubbles"></div>
+
+<div class="topbar">
+  <div class="brand">
+    <span class="dot"></span>
+    <span>KINÉFLEX / PROTOTYPE DE RECHERCHE</span>
+  </div>
+  <div class="step-indicator" id="stepIndicator">
+    <span class="current"></span><span></span><span></span><span></span>
+  </div>
+</div>
+
+<!-- =============== SCÈNE 1 : INTRO =============== -->
+<section class="scene active" id="scene-intro">
+  <div class="intro-grid">
+    <div>
+      <div class="eyebrow">Prototype — Version exploratoire</div>
+      <h1 class="title">Nettoyer<br>l'océan <em>à mains</em><br>nues.</h1>
+      <p class="lede">KinéFlex transforme la flexion des doigts en plongée horizontale. Fermez la main pour descendre, ouvrez-la pour remonter. Attrapez un maximum de déchets — et évitez les poissons.</p>
+      <div class="disclaimer">
+        → Ce prototype est un support de recherche, non un dispositif médical validé.
+      </div>
+      <button class="cta" onclick="goToScene('scene-twin')">
+        Commencer la démonstration <span class="arrow">→</span>
+      </button>
+    </div>
+    <aside>
+      <div class="meta-card">
+        <h3>Fiche technique</h3>
+        <div class="row"><span class="label">Modalité</span><span class="value">Flexion globale des doigts</span></div>
+        <div class="row"><span class="label">Capteur</span><span class="value">Webcam · MediaPipe Hands</span></div>
+        <div class="row"><span class="label">Session</span><span class="value">90 secondes</span></div>
+        <div class="row"><span class="label">Feedback</span><span class="value">Jumeau numérique temps réel</span></div>
+        <div class="row"><span class="label">Cadre théorique</span><span class="value">SDT · Flow · HBM</span></div>
+        <div class="row"><span class="label">Statut</span><span class="value" style="color:var(--amber)">v0.1 — Démonstrateur</span></div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- =============== SCÈNE 2 : JUMEAU NUMÉRIQUE =============== -->
+<section class="scene" id="scene-twin">
+  <div class="twin-visual">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <div class="twin-label"><span class="pulse"></span>Jumeau numérique — Actif</div>
+    <div class="twin-status">
+      <span id="camStatus">Caméra : <span class="no">en attente</span></span>
+      <span id="handStatus">Main : <span class="no">non détectée</span></span>
+    </div>
+  </div>
+
+  <div class="twin-text">
+    <div class="eyebrow">Étape 1 — Calibration</div>
+    <h2>Votre main,<br><em>reconstruite</em>.</h2>
+    <p>Ce que vous voyez est la reconstruction numérique de votre main : <span class="mono">21 points articulaires</span> détectés par la caméra et reliés en temps réel.</p>
+    <p>Cette représentation servira de <strong>feedback visuel</strong> pendant tout le jeu : elle vous montre ce que le système perçoit de votre mouvement.</p>
+    <ul class="twin-list">
+      <li>Placez la main devant la caméra, paume face à l'objectif</li>
+      <li>Distance recommandée : 30 à 60 cm</li>
+      <li>Lumière stable, arrière-plan peu encombré</li>
+    </ul>
+    <button class="cta" id="btnTwinNext" disabled onclick="goToScene('scene-name')">
+      <span id="twinBtnLabel">En attente de détection…</span> <span class="arrow">→</span>
+    </button>
+  </div>
+</section>
+
+<!-- =============== SCÈNE 3 : PRÉNOM =============== -->
+<section class="scene" id="scene-name">
+  <div class="name-card">
+    <div class="eyebrow" style="justify-content:center">Étape 2 — Identification</div>
+    <h2>Quel est votre<br><em>prénom</em> ?</h2>
+    <p>Votre prénom sera utilisé pour personnaliser les encouragements pendant la session.</p>
+    <div class="name-input-wrap">
+      <input type="text" id="nameInput" placeholder="Votre prénom" autocomplete="off" maxlength="20">
+      <div class="name-hint">Appuyez sur Entrée pour continuer</div>
+    </div>
+
+    <div class="name-choice-label">Doigts à mobiliser — au choix</div>
+    <div class="name-choice" id="fingerChoice">
+      <button class="finger-chip selected" data-finger="all">Main entière</button>
+      <button class="finger-chip" data-finger="long">Doigts longs</button>
+      <button class="finger-chip" data-finger="thumb">Pouce</button>
+      <button class="finger-chip" data-finger="index">Index seul</button>
+    </div>
+
+    <button class="cta" id="btnNameNext" disabled onclick="startGame()">
+      Plonger <span class="arrow">↓</span>
+    </button>
+  </div>
+</section>
+
+<!-- =============== SCÈNE 4 : JEU =============== -->
+<section class="scene" id="scene-game">
+  <div class="game-hud">
+    <div class="hud-block">
+      Temps<span class="num" id="hudTime">1:30</span>
+    </div>
+    <div class="hud-block score">
+      Score<span class="num" id="hudScore">0</span>
+    </div>
+    <div class="hud-block">
+      Déchets<span class="num" id="hudCycles">0</span>
+    </div>
+  </div>
+
+  <div class="game-canvas-wrap">
+    <canvas id="gameCanvas"></canvas>
+  </div>
+
+  <div class="encourage" id="encourage"></div>
+
+  <div class="mini-twin">
+    <video id="miniVideo" autoplay muted playsinline></video>
+    <canvas id="miniCanvas" width="640" height="480"></canvas>
+    <div class="mini-label">◆ Jumeau</div>
+  </div>
+
+  <div class="flexion-gauge">
+    <div class="g-label">Flexion actuelle</div>
+    <div class="g-bar"><div class="g-fill" id="gFill"></div></div>
+    <div class="g-value"><span id="gValue">0</span><span class="unit">/ 100</span></div>
+  </div>
+
+  <div class="sens-panel">
+    <div class="s-label">Sensibilité</div>
+    <input type="range" id="sensSlider" min="0.5" max="6" step="0.1" value="3">
+    <div class="s-value"><span id="sensValue">3.0</span><span class="s-unit">×</span></div>
+    <div class="s-hint">Si le plongeur réagit trop lentement, augmentez</div>
+  </div>
+
+  <div class="endscreen" id="endscreen">
+    <div class="eyebrow">Session terminée</div>
+    <h2 id="endTitle">Bravo <em>!</em></h2>
+    <div class="stats-grid">
+      <div class="stat-item"><div class="num" id="endScore">0</div><div class="lab">Score final</div></div>
+      <div class="stat-item"><div class="num" id="endCycles">0</div><div class="lab">Déchets collectés</div></div>
+      <div class="stat-item"><div class="num" id="endMax">0</div><div class="lab">Déchets manqués</div></div>
+    </div>
+    <button class="cta" onclick="location.reload()">Recommencer <span class="arrow">↻</span></button>
+  </div>
+</section>
+
+<script>
+/* ============ BULLES DÉCORATIVES ============ */
+(function(){
+  const wrap = document.getElementById('bubbles');
+  for(let i=0;i<24;i++){
+    const b = document.createElement('div');
+    b.className = 'bubble';
+    const size = Math.random()*26+6;
+    b.style.width = b.style.height = size+'px';
+    b.style.left = (Math.random()*100)+'%';
+    b.style.animationDuration = (Math.random()*14+10)+'s';
+    b.style.animationDelay = (Math.random()*10)+'s';
+    b.style.setProperty('--drift', (Math.random()*60-30)+'px');
+    wrap.appendChild(b);
+  }
+})();
+
+/* ============ NAVIGATION ============ */
+const scenes = ['scene-intro','scene-twin','scene-name','scene-game'];
+function goToScene(id){
+  document.querySelectorAll('.scene').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  const idx = scenes.indexOf(id);
+  const dots = document.querySelectorAll('#stepIndicator span');
+  dots.forEach((d,i)=>{
+    d.classList.remove('done','current');
+    if(i<idx) d.classList.add('done');
+    else if(i===idx) d.classList.add('current');
+  });
+  if(id==='scene-twin') initHandTracking();
+  if(id==='scene-name') document.getElementById('nameInput').focus();
+}
+
+/* ============ DÉTECTION MAIN — MEDIAPIPE ============ */
+let handsModel = null;
+let cameraUtil = null;
+let currentLandmarks = null;
+let handDetected = false;
+let detectionFrames = 0;
+
+async function initHandTracking(){
+  if(handsModel) return;
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  handsModel = new Hands({locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+  handsModel.setOptions({
+    maxNumHands:1,
+    modelComplexity:1,
+    minDetectionConfidence:0.6,
+    minTrackingConfidence:0.6
+  });
+
+  handsModel.onResults((results)=>{
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    ctx.save();
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.translate(canvas.width,0);
+    ctx.scale(-1,1);
+
+    if(results.multiHandLandmarks && results.multiHandLandmarks.length>0){
+      currentLandmarks = results.multiHandLandmarks[0];
+      handDetected = true;
+      detectionFrames++;
+      drawHand(ctx, currentLandmarks, canvas.width, canvas.height);
+
+      // miroir mini-twin
+      const mc = document.getElementById('miniCanvas');
+      if(mc){
+        mc.width = canvas.width; mc.height = canvas.height;
+        const mctx = mc.getContext('2d');
+        mctx.save();mctx.clearRect(0,0,mc.width,mc.height);
+        mctx.translate(mc.width,0);mctx.scale(-1,1);
+        drawHand(mctx, currentLandmarks, mc.width, mc.height);
+        mctx.restore();
+      }
+
+      document.getElementById('handStatus').innerHTML = 'Main : <span class="ok">détectée</span>';
+      if(detectionFrames>15){
+        const btn = document.getElementById('btnTwinNext');
+        btn.disabled = false;
+        document.getElementById('twinBtnLabel').textContent = 'Main détectée — Continuer';
+      }
+    } else {
+      currentLandmarks = null;
+      handDetected = false;
+      document.getElementById('handStatus').innerHTML = 'Main : <span class="no">non détectée</span>';
+    }
+    ctx.restore();
+  });
+
+  try {
+    cameraUtil = new Camera(video, {
+      onFrame: async () => { await handsModel.send({image:video}); },
+      width:640, height:480
+    });
+    await cameraUtil.start();
+    document.getElementById('camStatus').innerHTML = 'Caméra : <span class="ok">active</span>';
+
+    // Mini-twin vidéo aussi
+    const mini = document.getElementById('miniVideo');
+    if(mini && video.srcObject) mini.srcObject = video.srcObject;
+  } catch(err){
+    document.getElementById('camStatus').innerHTML = 'Caméra : <span class="no">refusée</span>';
+    console.error(err);
+  }
+}
+
+/* Dessin de la main — style jumeau numérique */
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+];
+
+function drawHand(ctx, lm, w, h){
+  // Liaisons — style filaire océanique
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = 'rgba(42,157,143,0.85)';
+  ctx.shadowColor = 'rgba(42,157,143,0.6)';
+  ctx.shadowBlur = 10;
+  HAND_CONNECTIONS.forEach(([a,b])=>{
+    ctx.beginPath();
+    ctx.moveTo(lm[a].x*w, lm[a].y*h);
+    ctx.lineTo(lm[b].x*w, lm[b].y*h);
+    ctx.stroke();
+  });
+  ctx.shadowBlur = 0;
+
+  // Points articulaires
+  lm.forEach((p,i)=>{
+    const x = p.x*w, y = p.y*h;
+    const isTip = [4,8,12,16,20].includes(i);
+    ctx.beginPath();
+    ctx.arc(x,y, isTip?6:4, 0, Math.PI*2);
+    ctx.fillStyle = isTip ? 'rgba(244,162,97,1)' : 'rgba(233,243,247,0.9)';
+    ctx.fill();
+    if(isTip){
+      ctx.beginPath();
+      ctx.arc(x,y, 10, 0, Math.PI*2);
+      ctx.strokeStyle = 'rgba(244,162,97,0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  });
+}
+
+/* ============ CALCUL FLEXION ============ */
+// Retourne une valeur 0 (main ouverte) → 100 (poing fermé)
+function computeFlexion(lm, mode='all'){
+  if(!lm) return 0;
+
+  // Distance d'un tip à la racine du poignet (landmark 0), normalisée par la taille de la main
+  const wrist = lm[0];
+  const palmRef = lm[9]; // base du majeur
+  const palmSize = dist(wrist, palmRef) || 0.001;
+
+  // Pour chaque doigt : plus le tip est proche du palm/wrist, plus la flexion est haute
+  const fingers = {
+    thumb: {tip:4, base:2},
+    index: {tip:8, base:5},
+    middle:{tip:12, base:9},
+    ring:  {tip:16, base:13},
+    pinky: {tip:20, base:17}
+  };
+
+  const flex = {};
+  for(const [name, pts] of Object.entries(fingers)){
+    const tipToWrist = dist(lm[pts.tip], wrist);
+    const baseToWrist = dist(lm[pts.base], wrist);
+    // Rapport : quand doigt est tendu tipToWrist >> baseToWrist ; quand fléchi, se rapproche
+    const ratio = tipToWrist / (baseToWrist || 0.001);
+    // Calibrage empirique : ratio ~2.2 = ouvert, ~0.9 = fermé
+    let f = (2.2 - ratio) / 1.3;
+    f = Math.max(0, Math.min(1, f)) * 100;
+    flex[name] = f;
+  }
+
+  if(mode==='thumb') return flex.thumb;
+  if(mode==='index') return flex.index;
+  if(mode==='long') return (flex.index+flex.middle+flex.ring+flex.pinky)/4;
+  return (flex.thumb+flex.index+flex.middle+flex.ring+flex.pinky)/5;
+}
+
+function dist(a,b){
+  const dx=a.x-b.x, dy=a.y-b.y, dz=(a.z||0)-(b.z||0);
+  return Math.sqrt(dx*dx+dy*dy+dz*dz);
+}
+
+/* ============ ÉCRAN PRÉNOM ============ */
+const nameInput = document.getElementById('nameInput');
+const btnNameNext = document.getElementById('btnNameNext');
+let playerName = '';
+let fingerMode = 'all';
+
+nameInput.addEventListener('input', ()=>{
+  playerName = nameInput.value.trim();
+  btnNameNext.disabled = playerName.length < 2;
+});
+nameInput.addEventListener('keydown', (e)=>{
+  if(e.key==='Enter' && !btnNameNext.disabled) startGame();
+});
+
+document.querySelectorAll('.finger-chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    document.querySelectorAll('.finger-chip').forEach(c=>c.classList.remove('selected'));
+    chip.classList.add('selected');
+    fingerMode = chip.dataset.finger;
+  });
+});
+
+/* ============ JEU — PLONGEUR HORIZONTAL ============ */
+let gameRunning = false;
+let gameState = null;
+const gameCanvas = document.getElementById('gameCanvas');
+const gctx = gameCanvas.getContext('2d');
+
+function startGame(){
+  goToScene('scene-game');
+  resizeGame();
+  window.addEventListener('resize', resizeGame);
+
+  gameState = {
+    // Plongeur — fixe horizontalement, mobile en Y
+    diverY: 0,               // décalage vertical (0 = centre)
+    diverVY: 0,
+    sensitivity: 3,          // multiplicateur de vitesse (ajustable en direct)
+    // Score
+    score: 0,
+    trashCollected: 0,
+    missedTrash: 0,
+    fishHits: 0,
+    // Entités qui défilent
+    entities: [],
+    bubbles: [],
+    // Décors de fond
+    backFish: [],            // poissons de décor (non dangereux, plan arrière)
+    kelp: [],                // algues au premier plan
+    // Temps
+    timeLeft: 90,
+    startTime: Date.now(),
+    lastEncourage: 0,
+    lastSpawn: 0,
+    spawnInterval: 1400,     // ms entre deux spawns (diminue avec le temps)
+    // Feedback
+    collectFlash: 0,
+    damageFlash: 0,
+    running: true
+  };
+
+  // Décor d'arrière-plan
+  for(let i=0;i<6;i++){
+    gameState.backFish.push({
+      x: Math.random()*gameCanvas.width,
+      y: Math.random()*gameCanvas.height,
+      size: Math.random()*10+6,
+      vx: -(Math.random()*0.3+0.15),
+      hue: 200
+    });
+  }
+  for(let i=0;i<5;i++){
+    gameState.kelp.push({
+      x: Math.random()*gameCanvas.width,
+      baseY: gameCanvas.height,
+      height: Math.random()*180+120,
+      phase: Math.random()*Math.PI*2,
+      vx: -0.4
+    });
+  }
+
+  gameLoop();
+  timerTick();
+  scheduleEncouragements();
+  spawnLoop();
+
+  // Slider de sensibilité — connecté en direct
+  const sensSlider = document.getElementById('sensSlider');
+  const sensValueEl = document.getElementById('sensValue');
+  sensSlider.value = gameState.sensitivity;
+  sensValueEl.textContent = gameState.sensitivity.toFixed(1);
+  sensSlider.addEventListener('input', (e)=>{
+    const v = parseFloat(e.target.value);
+    gameState.sensitivity = v;
+    sensValueEl.textContent = v.toFixed(1);
+  });
+}
+
+function resizeGame(){
+  gameCanvas.width = window.innerWidth;
+  gameCanvas.height = window.innerHeight;
+}
+
+/* ============ SPAWN DES ENTITÉS ============ */
+function spawnLoop(){
+  if(!gameState || !gameState.running) return;
+
+  const W = gameCanvas.width, H = gameCanvas.height;
+  const elapsed = (Date.now()-gameState.startTime)/1000;
+
+  // Difficulté progressive : spawn plus rapide et plus de poissons avec le temps
+  gameState.spawnInterval = Math.max(400, 900 - elapsed*10);
+  const fishRatio = Math.min(0.4, 0.2 + elapsed*0.003); // de 20% à 40% de poissons
+
+  const isFish = Math.random() < fishRatio;
+  const vx = -(Math.random()*2 + 6 + elapsed*0.08); // vitesse de défilement nettement augmentée
+
+  if(isFish){
+    gameState.entities.push({
+      kind: 'fish',
+      x: W + 60,
+      y: Math.random()*(H-200) + 100,
+      vx: vx,
+      vy: (Math.random()-0.5)*0.4,
+      size: Math.random()*14+16,
+      hue: Math.random()<0.25 ? 0 : 200,   // rouge-orangé (prédateur) ou bleu
+      flipPhase: Math.random()*Math.PI*2,
+      hit: false
+    });
+  } else {
+    const types = ['bottle','bag','can','boot'];
+    gameState.entities.push({
+      kind: 'trash',
+      type: types[Math.floor(Math.random()*types.length)],
+      x: W + 60,
+      y: Math.random()*(H-220) + 110,
+      vx: vx,
+      vy: 0,
+      rotation: Math.random()*Math.PI*2,
+      rotSpeed: (Math.random()-.5)*0.03,
+      driftPhase: Math.random()*Math.PI*2,
+      drift: Math.random()*0.5+0.3,
+      collected: false,
+      missed: false
+    });
+  }
+
+  setTimeout(spawnLoop, gameState.spawnInterval);
+}
+
+/* ============ BOUCLE PRINCIPALE ============ */
+function gameLoop(){
+  if(!gameState || !gameState.running) return;
+  if(!document.getElementById('scene-game').classList.contains('active')) return;
+
+  const W = gameCanvas.width, H = gameCanvas.height;
+  gctx.clearRect(0,0,W,H);
+
+  // Flexion temps réel
+  const flex = computeFlexion(currentLandmarks, fingerMode);
+  updateGauge(flex);
+
+  /* ==== PHYSIQUE DU PLONGEUR ====
+     flex 0   → main ouverte → remontée (diverY diminue)
+     flex 100 → main fermée → descente (diverY augmente)
+     neutre autour de 50
+     sensitivity : multiplicateur global */
+  const sens = gameState.sensitivity || 3;
+  const targetVY = (flex - 50) * 1.2 * sens;
+  gameState.diverVY += (targetVY - gameState.diverVY) * 0.6;
+  gameState.diverY += gameState.diverVY;
+
+  // Clamp vertical du plongeur (il reste dans l'écran)
+  const diverMinY = -H*0.35;
+  const diverMaxY = H*0.35;
+  if(gameState.diverY < diverMinY){ gameState.diverY = diverMinY; gameState.diverVY = 0; }
+  if(gameState.diverY > diverMaxY){ gameState.diverY = diverMaxY; gameState.diverVY = 0; }
+
+  const diverScreenX = W * 0.2;       // fixe horizontalement, à 20% de la largeur
+  const diverScreenY = H/2 + gameState.diverY;
+
+  // --- FOND ---
+  const grad = gctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0, '#1a6fa8');
+  grad.addColorStop(0.5, '#0b2540');
+  grad.addColorStop(1, '#04101c');
+  gctx.fillStyle = grad;
+  gctx.fillRect(0,0,W,H);
+
+  // Rayons de lumière (verticaux, défilent lentement)
+  const t = Date.now()/1000;
+  for(let i=0;i<6;i++){
+    const lx = ((i*W*0.2 - t*15) % (W+200)) - 100;
+    gctx.fillStyle = `rgba(244,200,120,0.07)`;
+    gctx.beginPath();
+    gctx.moveTo(lx, 0);
+    gctx.lineTo(lx-30, H);
+    gctx.lineTo(lx+40, H);
+    gctx.lineTo(lx+70, 0);
+    gctx.closePath();
+    gctx.fill();
+  }
+
+  // Poissons de décor (arrière-plan, petits et lents)
+  gameState.backFish.forEach(f=>{
+    f.x += f.vx;
+    if(f.x < -40){ f.x = W+40; f.y = Math.random()*H; }
+    drawFish(f.x, f.y, f.size, f.hue, true, 0.4);
+  });
+
+  // Algues (premier plan, défilent)
+  gameState.kelp.forEach(k=>{
+    k.x += k.vx;
+    if(k.x < -60) k.x = W+60;
+    drawKelp(k.x, k.baseY, k.height, k.phase + t*0.8);
+  });
+
+  // --- ENTITÉS (déchets + poissons dangereux) ---
+  gameState.entities.forEach(e=>{
+    e.x += e.vx;
+
+    if(e.kind === 'trash'){
+      if(e.collected || e.missed) return;
+      e.driftPhase += 0.04;
+      const dy = Math.sin(e.driftPhase) * e.drift * 12;
+      const drawY = e.y + dy;
+      drawTrash(e.x, drawY, e.type, e.rotation);
+      e.rotation += e.rotSpeed;
+
+      // Collision avec plongeur
+      const ddx = e.x - diverScreenX;
+      const ddy = drawY - diverScreenY;
+      if(Math.sqrt(ddx*ddx + ddy*ddy) < 60){
+        e.collected = true;
+        gameState.trashCollected++;
+        gameState.score += 100;
+        gameState.collectFlash = 1;
+        triggerCollectReward();
+      }
+      // Raté (sort par la gauche)
+      if(e.x < -80 && !e.collected){
+        e.missed = true;
+        gameState.missedTrash++;
+      }
+    }
+    else if(e.kind === 'fish'){
+      e.y += e.vy;
+      e.flipPhase += 0.15;
+      // Léger mouvement sinusoïdal
+      const drawY = e.y + Math.sin(e.flipPhase*0.3)*2;
+      drawDangerFish(e.x, drawY, e.size, e.hue, t);
+
+      // Collision avec plongeur — pénalité
+      if(!e.hit){
+        const ddx = e.x - diverScreenX;
+        const ddy = drawY - diverScreenY;
+        if(Math.sqrt(ddx*ddx + ddy*ddy) < 55){
+          e.hit = true;
+          gameState.fishHits++;
+          gameState.damageFlash = 1;
+          gameState.score = Math.max(0, gameState.score - 50);
+          triggerDamageMessage();
+        }
+      }
+    }
+  });
+
+  // Nettoyage entités hors écran
+  gameState.entities = gameState.entities.filter(e => e.x > -100 && !(e.kind==='fish' && e.hit && e.x < diverScreenX-100));
+
+  // --- PLONGEUR ---
+  drawDiver(diverScreenX, diverScreenY, t, gameState.diverVY);
+
+  // Bulles du plongeur
+  if(Math.random()<0.4){
+    gameState.bubbles.push({
+      x: diverScreenX + 18,
+      y: diverScreenY - 30,
+      size: Math.random()*4+2,
+      vy: -0.8-Math.random()*0.5,
+      vx: 0.3,
+      life: 1
+    });
+  }
+  gameState.bubbles = gameState.bubbles.filter(b=>{
+    b.y += b.vy; b.x += b.vx; b.life -= 0.012;
+    if(b.life<=0) return false;
+    gctx.beginPath();
+    gctx.arc(b.x, b.y, b.size, 0, Math.PI*2);
+    gctx.fillStyle = `rgba(233,243,247,${b.life*0.5})`;
+    gctx.fill();
+    return true;
+  });
+
+  // Flash collecte (ambre)
+  if(gameState.collectFlash > 0){
+    gctx.fillStyle = `rgba(244,162,97,${gameState.collectFlash*0.22})`;
+    gctx.fillRect(0,0,W,H);
+    gameState.collectFlash -= 0.05;
+  }
+  // Flash dégât (corail)
+  if(gameState.damageFlash > 0){
+    gctx.fillStyle = `rgba(231,111,81,${gameState.damageFlash*0.25})`;
+    gctx.fillRect(0,0,W,H);
+    gameState.damageFlash -= 0.05;
+  }
+
+  // MAJ HUD
+  document.getElementById('hudScore').textContent = gameState.score;
+  document.getElementById('hudCycles').textContent = gameState.trashCollected;
+
+  requestAnimationFrame(gameLoop);
+}
+
+/* ============ DESSIN DU PLONGEUR (orienté droite) ============ */
+function drawDiver(cx, cy, t, vy){
+  gctx.save();
+  gctx.translate(cx, cy);
+
+  // Inclinaison selon la vitesse verticale
+  const tilt = Math.max(-0.4, Math.min(0.4, vy*0.07));
+  gctx.rotate(tilt);
+
+  // Échelle globale : le plongeur est ~120px de long pour être bien lisible
+  const scale = 1.35;
+  gctx.scale(scale, scale);
+
+  // Animation de nage : ondulation légère du corps
+  const bodyWave = Math.sin(t*3) * 0.04;
+  const finWag = Math.sin(t*4.5) * 0.55;
+  const armSway = Math.sin(t*2.5) * 0.08;
+
+  // Ombre portée sous le plongeur
+  gctx.save();
+  gctx.translate(0, 28);
+  gctx.scale(1, 0.3);
+  gctx.fillStyle = 'rgba(0,0,0,0.25)';
+  gctx.beginPath();
+  gctx.ellipse(0, 0, 45, 8, 0, 0, Math.PI*2);
+  gctx.fill();
+  gctx.restore();
+
+  // ==================================================
+  // PALMES (à l'arrière, battent en alternance)
+  // ==================================================
+  gctx.save();
+  gctx.translate(-38, 0);
+
+  // Palme supérieure
+  gctx.save();
+  gctx.translate(0, -5);
+  gctx.rotate(finWag*0.4);
+  // Chausson (caoutchouc noir)
+  gctx.fillStyle = '#1a1a1a';
+  gctx.strokeStyle = '#0a0a0a';
+  gctx.lineWidth = 1;
+  gctx.beginPath();
+  gctx.ellipse(4, 0, 8, 5, 0, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+  // Voilure de la palme (forme allongée réaliste)
+  const palmGrad1 = gctx.createLinearGradient(-4, 0, -32, 0);
+  palmGrad1.addColorStop(0, '#2a2a2a');
+  palmGrad1.addColorStop(1, '#0a0a0a');
+  gctx.fillStyle = palmGrad1;
+  gctx.strokeStyle = '#000';
+  gctx.lineWidth = 1;
+  gctx.beginPath();
+  gctx.moveTo(-2, -4);
+  gctx.quadraticCurveTo(-18, -8, -32, -5);
+  gctx.quadraticCurveTo(-34, 0, -32, 5);
+  gctx.quadraticCurveTo(-18, 8, -2, 4);
+  gctx.closePath();
+  gctx.fill(); gctx.stroke();
+  // Nervures de la palme
+  gctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  gctx.lineWidth = 0.5;
+  for(let i=1;i<4;i++){
+    gctx.beginPath();
+    gctx.moveTo(-4-i*6, -5+i*0.8);
+    gctx.lineTo(-4-i*6, 5-i*0.8);
+    gctx.stroke();
+  }
+  gctx.restore();
+
+  // Palme inférieure (opposition de phase)
+  gctx.save();
+  gctx.translate(0, 5);
+  gctx.rotate(-finWag*0.4);
+  gctx.fillStyle = '#1a1a1a';
+  gctx.strokeStyle = '#0a0a0a';
+  gctx.lineWidth = 1;
+  gctx.beginPath();
+  gctx.ellipse(4, 0, 8, 5, 0, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+  const palmGrad2 = gctx.createLinearGradient(-4, 0, -32, 0);
+  palmGrad2.addColorStop(0, '#2a2a2a');
+  palmGrad2.addColorStop(1, '#0a0a0a');
+  gctx.fillStyle = palmGrad2;
+  gctx.strokeStyle = '#000';
+  gctx.lineWidth = 1;
+  gctx.beginPath();
+  gctx.moveTo(-2, -4);
+  gctx.quadraticCurveTo(-18, -8, -32, -5);
+  gctx.quadraticCurveTo(-34, 0, -32, 5);
+  gctx.quadraticCurveTo(-18, 8, -2, 4);
+  gctx.closePath();
+  gctx.fill(); gctx.stroke();
+  gctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  gctx.lineWidth = 0.5;
+  for(let i=1;i<4;i++){
+    gctx.beginPath();
+    gctx.moveTo(-4-i*6, -5+i*0.8);
+    gctx.lineTo(-4-i*6, 5-i*0.8);
+    gctx.stroke();
+  }
+  gctx.restore();
+
+  gctx.restore();
+
+  // ==================================================
+  // JAMBES (combinaison noire, profil horizontal)
+  // ==================================================
+  gctx.save();
+  gctx.rotate(bodyWave);
+
+  // Jambe (une visible, l'autre cachée derrière)
+  const legGrad = gctx.createLinearGradient(0, -8, 0, 10);
+  legGrad.addColorStop(0, '#2a2a2a');
+  legGrad.addColorStop(0.5, '#1a1a1a');
+  legGrad.addColorStop(1, '#0a0a0a');
+  gctx.fillStyle = legGrad;
+  gctx.strokeStyle = '#000';
+  gctx.lineWidth = 1.2;
+
+  // Cuisse + mollet (une forme allongée effilée)
+  gctx.beginPath();
+  gctx.moveTo(-8, -7);
+  gctx.quadraticCurveTo(-20, -6, -30, -4);
+  gctx.quadraticCurveTo(-32, 0, -30, 4);
+  gctx.quadraticCurveTo(-20, 6, -8, 7);
+  gctx.quadraticCurveTo(-4, 0, -8, -7);
+  gctx.closePath();
+  gctx.fill(); gctx.stroke();
+
+  // Genou (surlignage reflet)
+  gctx.fillStyle = 'rgba(100,130,160,0.25)';
+  gctx.beginPath();
+  gctx.ellipse(-18, -4, 8, 1.5, 0.1, 0, Math.PI*2);
+  gctx.fill();
+
+  // ==================================================
+  // TORSE / GILET STABILISATEUR (BCD)
+  // ==================================================
+  // Combinaison de base (noire)
+  const torsoGrad = gctx.createLinearGradient(0, -12, 0, 12);
+  torsoGrad.addColorStop(0, '#2a2a2a');
+  torsoGrad.addColorStop(0.5, '#1a1a1a');
+  torsoGrad.addColorStop(1, '#0a0a0a');
+  gctx.fillStyle = torsoGrad;
+  gctx.strokeStyle = '#000';
+  gctx.lineWidth = 1.5;
+  gctx.beginPath();
+  gctx.ellipse(0, 0, 20, 13, 0, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+
+  // Gilet BCD par-dessus (couleur caractéristique marine/ambre)
+  gctx.fillStyle = '#1a3a5c';
+  gctx.strokeStyle = '#0b2540';
+  gctx.lineWidth = 1.2;
+  gctx.beginPath();
+  gctx.moveTo(-10, -12);
+  gctx.quadraticCurveTo(-14, -8, -14, 0);
+  gctx.quadraticCurveTo(-14, 8, -10, 12);
+  gctx.lineTo(10, 12);
+  gctx.quadraticCurveTo(14, 8, 14, 0);
+  gctx.quadraticCurveTo(14, -8, 10, -12);
+  gctx.closePath();
+  gctx.fill(); gctx.stroke();
+
+  // Bande ambre sur le BCD (logo / détail)
+  gctx.fillStyle = '#f4a261';
+  gctx.fillRect(-8, -2, 16, 3);
+
+  // Sangles du BCD
+  gctx.strokeStyle = '#0a1a2a';
+  gctx.lineWidth = 1.5;
+  gctx.beginPath();
+  gctx.moveTo(-12, -8);
+  gctx.lineTo(12, -8);
+  gctx.stroke();
+  gctx.beginPath();
+  gctx.moveTo(-12, 8);
+  gctx.lineTo(12, 8);
+  gctx.stroke();
+
+  // ==================================================
+  // BOUTEILLE DE PLONGÉE (derrière le plongeur, visible au-dessus)
+  // ==================================================
+  gctx.save();
+  gctx.translate(-4, -14);
+
+  // Corps de la bouteille (cylindre horizontal, vu de profil comme un rectangle arrondi)
+  const tankGrad = gctx.createLinearGradient(0, -6, 0, 6);
+  tankGrad.addColorStop(0, '#6a6a6a');
+  tankGrad.addColorStop(0.5, '#3a3a3a');
+  tankGrad.addColorStop(1, '#1a1a1a');
+  gctx.fillStyle = tankGrad;
+  gctx.strokeStyle = '#0a0a0a';
+  gctx.lineWidth = 1.2;
+  gctx.beginPath();
+  gctx.roundRect(-10, -5, 20, 10, 3);
+  gctx.fill(); gctx.stroke();
+
+  // Robinetterie / bloc de tête de bouteille
+  gctx.fillStyle = '#8a7a40';
+  gctx.strokeStyle = '#4a3a10';
+  gctx.beginPath();
+  gctx.roundRect(8, -3, 5, 6, 1);
+  gctx.fill(); gctx.stroke();
+
+  // Reflet bouteille
+  gctx.fillStyle = 'rgba(255,255,255,0.18)';
+  gctx.fillRect(-8, -4, 14, 1.5);
+
+  gctx.restore();
+
+  // ==================================================
+  // DÉTENDEUR (tuyau de la bouteille à la bouche)
+  // ==================================================
+  gctx.strokeStyle = '#2a2a2a';
+  gctx.lineWidth = 2.2;
+  gctx.lineCap = 'round';
+  gctx.beginPath();
+  gctx.moveTo(4, -14);           // départ : tête de bouteille
+  gctx.quadraticCurveTo(12, -12, 16, -8);
+  gctx.quadraticCurveTo(20, -4, 22, -2); // arrive à la bouche
+  gctx.stroke();
+
+  // Tuyau du manomètre (second tuyau, descend vers l'avant)
+  gctx.strokeStyle = '#1a1a1a';
+  gctx.lineWidth = 1.8;
+  gctx.beginPath();
+  gctx.moveTo(-4, -10);
+  gctx.quadraticCurveTo(8, -2, 18, 4);
+  gctx.stroke();
+  // Manomètre au bout
+  gctx.fillStyle = '#2a2a2a';
+  gctx.strokeStyle = '#000';
+  gctx.lineWidth = 1;
+  gctx.beginPath();
+  gctx.arc(19, 5, 3, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+  gctx.fillStyle = '#f4a261';
+  gctx.beginPath();
+  gctx.arc(19, 5, 1.2, 0, Math.PI*2);
+  gctx.fill();
+
+  gctx.restore(); // fin bodyWave
+
+  // ==================================================
+  // BRAS TENDU EN AVANT (prêt à attraper les déchets)
+  // ==================================================
+  gctx.save();
+  gctx.rotate(armSway*0.3);
+
+  // Épaule (émerge du BCD)
+  gctx.fillStyle = '#1a1a1a';
+  gctx.strokeStyle = '#000';
+  gctx.lineWidth = 1.2;
+  gctx.beginPath();
+  gctx.ellipse(12, -2, 6, 5, 0, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+
+  // Bras (haut du bras)
+  const armGrad = gctx.createLinearGradient(12, 0, 28, 0);
+  armGrad.addColorStop(0, '#2a2a2a');
+  armGrad.addColorStop(1, '#1a1a1a');
+  gctx.fillStyle = armGrad;
+  gctx.beginPath();
+  gctx.ellipse(20, -1, 10, 4, 0.08, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+
+  // Avant-bras
+  gctx.beginPath();
+  gctx.ellipse(32, 1, 9, 3.5, 0.15, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+
+  // Gant/main (couleur peau gantée néoprène bleu-noir)
+  gctx.fillStyle = '#1a3a5c';
+  gctx.strokeStyle = '#0a1a2a';
+  gctx.lineWidth = 1;
+  gctx.beginPath();
+  gctx.ellipse(42, 3, 5, 4, 0.2, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+  // Doigts suggérés
+  gctx.strokeStyle = '#0a1a2a';
+  gctx.lineWidth = 0.8;
+  gctx.beginPath();
+  gctx.moveTo(44, 1); gctx.lineTo(47, 2); gctx.stroke();
+  gctx.beginPath();
+  gctx.moveTo(45, 3); gctx.lineTo(48, 4); gctx.stroke();
+
+  gctx.restore();
+
+  // ==================================================
+  // TÊTE + MASQUE DE PLONGÉE
+  // ==================================================
+  gctx.save();
+
+  // Cagoule néoprène (recouvre la tête, laisse visage visible)
+  gctx.fillStyle = '#0a0a0a';
+  gctx.strokeStyle = '#000';
+  gctx.lineWidth = 1.2;
+  gctx.beginPath();
+  gctx.arc(15, -13, 11, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+
+  // Visage (peau visible entre masque et détendeur)
+  gctx.fillStyle = '#e8c49a';
+  gctx.strokeStyle = '#a88560';
+  gctx.lineWidth = 0.8;
+  gctx.beginPath();
+  gctx.ellipse(20, -10, 6, 6.5, 0.1, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+
+  // Masque de plongée (grand verre panoramique)
+  // Cadre du masque (silicone noir)
+  gctx.fillStyle = '#0a0a0a';
+  gctx.strokeStyle = '#000';
+  gctx.lineWidth = 1.2;
+  gctx.beginPath();
+  gctx.ellipse(22, -12, 8.5, 7, 0, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+
+  // Verre du masque (reflet bleu-noir profond)
+  const maskGrad = gctx.createRadialGradient(21, -13, 1, 22, -12, 7);
+  maskGrad.addColorStop(0, '#2a5577');
+  maskGrad.addColorStop(0.6, '#0a1f33');
+  maskGrad.addColorStop(1, '#050f1a');
+  gctx.fillStyle = maskGrad;
+  gctx.beginPath();
+  gctx.ellipse(22, -12, 7, 5.5, 0, 0, Math.PI*2);
+  gctx.fill();
+
+  // Reflet principal (haut gauche du verre)
+  gctx.fillStyle = 'rgba(200,230,245,0.55)';
+  gctx.beginPath();
+  gctx.ellipse(19, -14, 2.5, 1.5, -0.4, 0, Math.PI*2);
+  gctx.fill();
+
+  // Reflet secondaire (petit point brillant)
+  gctx.fillStyle = 'rgba(255,255,255,0.8)';
+  gctx.beginPath();
+  gctx.arc(24, -13, 0.8, 0, Math.PI*2);
+  gctx.fill();
+
+  // Sangle du masque (visible derrière la tête)
+  gctx.strokeStyle = '#1a1a1a';
+  gctx.lineWidth = 2;
+  gctx.beginPath();
+  gctx.moveTo(14, -15);
+  gctx.quadraticCurveTo(8, -14, 6, -12);
+  gctx.stroke();
+  gctx.beginPath();
+  gctx.moveTo(14, -9);
+  gctx.quadraticCurveTo(8, -10, 6, -8);
+  gctx.stroke();
+
+  // Embout du détendeur dans la bouche
+  gctx.fillStyle = '#2a2a2a';
+  gctx.strokeStyle = '#000';
+  gctx.lineWidth = 1;
+  gctx.beginPath();
+  gctx.roundRect(24, -4, 6, 4, 1);
+  gctx.fill(); gctx.stroke();
+
+  // Deuxième étage du détendeur (boîtier arrondi devant)
+  gctx.fillStyle = '#1a1a1a';
+  gctx.beginPath();
+  gctx.arc(27, -2, 3, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+  // Pastille centrale
+  gctx.fillStyle = '#f4a261';
+  gctx.beginPath();
+  gctx.arc(27, -2, 1, 0, Math.PI*2);
+  gctx.fill();
+
+  gctx.restore();
+
+  gctx.restore();
+}
+
+/* ============ DÉCOR : poissons ambiance + algues ============ */
+function drawFish(x, y, size, hue, flip, opacity=1){
+  gctx.save();
+  gctx.globalAlpha = opacity;
+  gctx.translate(x,y);
+  if(flip) gctx.scale(-1,1);
+  gctx.fillStyle = hue===30 ? '#f4a261' : '#6a94a7';
+  gctx.strokeStyle = hue===30 ? '#c07a3e' : '#3a5a6c';
+  gctx.lineWidth = 1;
+  gctx.beginPath();
+  gctx.ellipse(0,0, size, size*0.5, 0, 0, Math.PI*2);
+  gctx.fill();gctx.stroke();
+  gctx.beginPath();
+  gctx.moveTo(-size*0.8, 0);
+  gctx.lineTo(-size*1.4, -size*0.4);
+  gctx.lineTo(-size*1.4, size*0.4);
+  gctx.closePath();
+  gctx.fill();gctx.stroke();
+  gctx.fillStyle = '#000';
+  gctx.beginPath();gctx.arc(size*0.5, -size*0.1, 1.2, 0, Math.PI*2);gctx.fill();
+  gctx.restore();
+}
+
+function drawKelp(x, baseY, height, phase){
+  gctx.save();
+  gctx.strokeStyle = 'rgba(20,60,50,0.6)';
+  gctx.fillStyle = 'rgba(30,80,65,0.5)';
+  gctx.lineWidth = 6;
+  gctx.lineCap = 'round';
+  gctx.beginPath();
+  gctx.moveTo(x, baseY);
+  for(let i=1;i<=8;i++){
+    const ratio = i/8;
+    const sway = Math.sin(phase + ratio*3) * 15 * ratio;
+    gctx.lineTo(x + sway, baseY - height*ratio);
+  }
+  gctx.stroke();
+  gctx.restore();
+}
+
+/* ============ POISSON DANGEREUX (obstacle) ============ */
+function drawDangerFish(x, y, size, hue, t){
+  gctx.save();
+  gctx.translate(x,y);
+  gctx.scale(-1,1);   // regarde vers la gauche (direction de nage)
+
+  const tailWag = Math.sin(t*8)*0.35;
+
+  // Corps
+  const bodyColor = hue===0 ? '#e76f51' : '#4a9bb5';
+  const strokeColor = hue===0 ? '#a44433' : '#2a6b82';
+  gctx.fillStyle = bodyColor;
+  gctx.strokeStyle = strokeColor;
+  gctx.lineWidth = 2;
+  gctx.shadowColor = 'rgba(0,0,0,.3)';
+  gctx.shadowBlur = 10;
+
+  gctx.beginPath();
+  gctx.ellipse(0, 0, size, size*0.55, 0, 0, Math.PI*2);
+  gctx.fill(); gctx.stroke();
+
+  // Queue (qui bat)
+  gctx.save();
+  gctx.translate(-size*0.85, 0);
+  gctx.rotate(tailWag);
+  gctx.beginPath();
+  gctx.moveTo(0, 0);
+  gctx.lineTo(-size*0.6, -size*0.55);
+  gctx.lineTo(-size*0.45, 0);
+  gctx.lineTo(-size*0.6, size*0.55);
+  gctx.closePath();
+  gctx.fill(); gctx.stroke();
+  gctx.restore();
+
+  gctx.shadowBlur = 0;
+
+  // Nageoire supérieure
+  gctx.beginPath();
+  gctx.moveTo(-size*0.1, -size*0.5);
+  gctx.quadraticCurveTo(0, -size*0.9, size*0.2, -size*0.5);
+  gctx.closePath();
+  gctx.fill(); gctx.stroke();
+
+  // Ventre clair
+  gctx.fillStyle = 'rgba(255,255,255,0.2)';
+  gctx.beginPath();
+  gctx.ellipse(0, size*0.15, size*0.8, size*0.25, 0, 0, Math.PI*2);
+  gctx.fill();
+
+  // Œil (côté visible)
+  gctx.fillStyle = '#fff';
+  gctx.beginPath(); gctx.arc(size*0.5, -size*0.15, 3, 0, Math.PI*2); gctx.fill();
+  gctx.fillStyle = '#000';
+  gctx.beginPath(); gctx.arc(size*0.55, -size*0.15, 1.5, 0, Math.PI*2); gctx.fill();
+
+  // Bouche (dents si prédateur)
+  if(hue===0){
+    gctx.strokeStyle = '#600';
+    gctx.lineWidth = 1.5;
+    gctx.beginPath();
+    gctx.moveTo(size*0.85, size*0.05);
+    gctx.lineTo(size*0.95, size*0.1);
+    gctx.stroke();
+    // Dents
+    gctx.fillStyle = '#fff';
+    gctx.beginPath();
+    gctx.moveTo(size*0.88, size*0.05);
+    gctx.lineTo(size*0.9, size*0.12);
+    gctx.lineTo(size*0.92, size*0.05);
+    gctx.closePath();
+    gctx.fill();
+  }
+
+  gctx.restore();
+}
+
+/* ============ DESSIN DES DÉCHETS ============ */
+function drawTrash(x, y, type, rot){
+  gctx.save();
+  gctx.translate(x, y);
+  gctx.rotate(rot);
+  gctx.strokeStyle = '#1a2a3a';
+  gctx.lineWidth = 1.5;
+  gctx.shadowColor = 'rgba(244,162,97,0.3)';
+  gctx.shadowBlur = 8;
+
+  if(type==='bottle'){
+    gctx.fillStyle = 'rgba(180,220,220,0.8)';
+    gctx.beginPath();
+    gctx.roundRect(-7, -14, 14, 26, 3);
+    gctx.fill(); gctx.stroke();
+    gctx.fillStyle = '#e76f51';
+    gctx.fillRect(-4, -17, 8, 4);
+    gctx.strokeRect(-4, -17, 8, 4);
+    gctx.fillStyle = 'rgba(244,162,97,0.7)';
+    gctx.fillRect(-7, -4, 14, 6);
+  }
+  else if(type==='bag'){
+    gctx.fillStyle = 'rgba(233,243,247,0.6)';
+    gctx.beginPath();
+    gctx.moveTo(-12, -8);
+    gctx.quadraticCurveTo(-15, 0, -10, 12);
+    gctx.quadraticCurveTo(0, 16, 10, 12);
+    gctx.quadraticCurveTo(15, 0, 12, -8);
+    gctx.lineTo(8, -12);
+    gctx.lineTo(-8, -12);
+    gctx.closePath();
+    gctx.fill(); gctx.stroke();
+    gctx.beginPath();
+    gctx.arc(-6, -12, 3, Math.PI, 0);
+    gctx.stroke();
+    gctx.beginPath();
+    gctx.arc(6, -12, 3, Math.PI, 0);
+    gctx.stroke();
+  }
+  else if(type==='can'){
+    gctx.fillStyle = '#c0c4c8';
+    gctx.beginPath();
+    gctx.roundRect(-8, -12, 16, 22, 2);
+    gctx.fill(); gctx.stroke();
+    gctx.fillStyle = '#e76f51';
+    gctx.fillRect(-8, -4, 16, 4);
+    gctx.fillStyle = '#4a5058';
+    gctx.beginPath();
+    gctx.ellipse(0, -12, 6, 2, 0, 0, Math.PI*2);
+    gctx.fill();
+  }
+  else if(type==='boot'){
+    gctx.fillStyle = '#5a4030';
+    gctx.beginPath();
+    gctx.moveTo(-12, 6);
+    gctx.lineTo(-12, -10);
+    gctx.lineTo(-4, -12);
+    gctx.lineTo(-4, -2);
+    gctx.lineTo(14, -2);
+    gctx.quadraticCurveTo(18, -2, 18, 2);
+    gctx.lineTo(18, 8);
+    gctx.closePath();
+    gctx.fill(); gctx.stroke();
+    gctx.strokeStyle = '#2a1a0f';
+    gctx.lineWidth = 1;
+    for(let i=0;i<3;i++){
+      gctx.beginPath();
+      gctx.moveTo(-8, -8+i*3);
+      gctx.lineTo(-4, -9+i*3);
+      gctx.stroke();
+    }
+  }
+
+  gctx.restore();
+}
+
+/* Mix couleur hex */
+function mixColor(c1,c2,t){
+  const h1 = hexToRgb(c1), h2 = hexToRgb(c2);
+  const r = Math.round(h1.r + (h2.r-h1.r)*t);
+  const g = Math.round(h1.g + (h2.g-h1.g)*t);
+  const b = Math.round(h1.b + (h2.b-h1.b)*t);
+  return `rgb(${r},${g},${b})`;
+}
+function hexToRgb(h){
+  h=h.replace('#','');
+  return {r:parseInt(h.substr(0,2),16),g:parseInt(h.substr(2,2),16),b:parseInt(h.substr(4,2),16)};
+}
+
+function updateGauge(flex){
+  document.getElementById('gFill').style.width = flex+'%';
+  document.getElementById('gValue').textContent = Math.round(flex);
+}
+
+/* ============ ENCOURAGEMENTS PERSONNALISÉS ============ */
+const ENCOURAGE_MESSAGES = [
+  "Continue {name} !",
+  "Magnifique {name}",
+  "Tu y es presque {name}",
+  "Superbe amplitude {name}",
+  "Encore un effort {name}",
+  "Belle plongée {name}",
+  "Bravo {name} !",
+  "Tu tiens bon {name}",
+  "Excellent {name}",
+  "Respire et continue {name}"
+];
+const COLLECT_MESSAGES = [
+  "Bien joué {name} !",
+  "Encore un {name} !",
+  "L'océan te remercie {name}",
+  "Parfait {name} !",
+  "Excellente prise {name}",
+  "Continue comme ça {name}"
+];
+const DAMAGE_MESSAGES = [
+  "Attention {name} !",
+  "Esquive {name} !",
+  "Remonte {name} !",
+  "Oups {name}…"
+];
+
+function showEncourage(text, accent=false){
+  const el = document.getElementById('encourage');
+  el.textContent = text;
+  el.style.color = accent ? 'var(--amber)' : 'var(--amber-soft)';
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+}
+
+function triggerCollectReward(){
+  const msg = COLLECT_MESSAGES[Math.floor(Math.random()*COLLECT_MESSAGES.length)];
+  showEncourage(msg.replace('{name}', playerName), true);
+}
+
+function triggerDamageMessage(){
+  const msg = DAMAGE_MESSAGES[Math.floor(Math.random()*DAMAGE_MESSAGES.length)];
+  const el = document.getElementById('encourage');
+  el.textContent = msg.replace('{name}', playerName);
+  el.style.color = '#e76f51';
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+}
+
+function scheduleEncouragements(){
+  const tick = ()=>{
+    if(!gameState || gameState.timeLeft<=0) return;
+    const now = Date.now();
+    if(now - gameState.lastEncourage > 12000 && Math.random()<0.5){
+      const msg = ENCOURAGE_MESSAGES[Math.floor(Math.random()*ENCOURAGE_MESSAGES.length)];
+      showEncourage(msg.replace('{name}', playerName));
+      gameState.lastEncourage = now;
+    }
+    setTimeout(tick, 4000);
+  };
+  setTimeout(tick, 6000);
+}
+
+/* ============ TIMER ============ */
+function timerTick(){
+  if(!gameState) return;
+  const elapsed = Math.floor((Date.now()-gameState.startTime)/1000);
+  gameState.timeLeft = Math.max(0, 90 - elapsed);
+  const m = Math.floor(gameState.timeLeft/60);
+  const s = gameState.timeLeft%60;
+  document.getElementById('hudTime').textContent = m+':'+String(s).padStart(2,'0');
+  if(gameState.timeLeft<=0){ endGame(); return; }
+  setTimeout(timerTick, 250);
+}
+
+function endGame(){
+  gameState.running = false;
+  document.getElementById('endscreen').classList.add('show');
+  document.getElementById('endTitle').innerHTML = `Bravo <em>${playerName} !</em>`;
+  document.getElementById('endScore').textContent = gameState.score;
+  document.getElementById('endCycles').textContent = gameState.trashCollected;
+  document.getElementById('endMax').textContent = gameState.missedTrash;
+}
+</script>
+</body>
+</html>
